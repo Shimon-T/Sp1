@@ -341,11 +341,8 @@ struct TodayView: View {
         ("化学の宿題", "4/29提出")
     ]
 
-    // State for showing lesson detail
     @State private var selectedLessonIndex: Int? = nil
     @State private var isShowingDetail: Bool = false
-
-
     var body: some View {
         NavigationView {
             List {
@@ -400,8 +397,6 @@ struct TodayView: View {
                         }
                     }
                 }
-
-
                 Section(header: Text("提出期限が近い課題")) {
                     ForEach(upcomingTasks, id: \.0) { task in
                         VStack(alignment: .leading) {
@@ -414,6 +409,7 @@ struct TodayView: View {
                 }
             }
             .navigationTitle("今日")
+            
             .sheet(isPresented: $isShowingDetail) {
                 if let idx = selectedLessonIndex,
                    let lesson = todayLessons.indices.contains(idx) ? todayLessons[idx] : nil,
@@ -487,6 +483,7 @@ struct LessonDetailSheet: View {
                     }
                 }
             }
+
         }
     }
 }
