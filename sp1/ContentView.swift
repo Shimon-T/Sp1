@@ -335,6 +335,7 @@ struct TodayView: View {
         }
     }
 
+
     let upcomingTasks = [
         ("国語のレポート", "4/28提出"),
         ("化学の宿題", "4/29提出")
@@ -343,6 +344,7 @@ struct TodayView: View {
     // State for showing lesson detail
     @State private var selectedLessonIndex: Int? = nil
     @State private var isShowingDetail: Bool = false
+
 
     var body: some View {
         NavigationView {
@@ -398,6 +400,7 @@ struct TodayView: View {
                         }
                     }
                 }
+
 
                 Section(header: Text("提出期限が近い課題")) {
                     ForEach(upcomingTasks, id: \.0) { task in
