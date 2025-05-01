@@ -241,32 +241,15 @@ struct SettingsView: View {
                 .listStyle(.insetGrouped)
 
                 if let selectedIndex = selectedPeriodIndex {
-                    VStack(spacing: 10) {
-                        Text("\(selectedIndex + 1)限の時間を編集")
-                            .font(.headline)
-                        
-                        HStack {
-                            VStack {
-                                Text("開始")
-                                    .font(.subheadline)
-                                DatePicker("", selection: $periods[selectedIndex].start, displayedComponents: .hourAndMinute)
-                                    .labelsHidden()
-                                    .datePickerStyle(.compact)
-                            }
-                            VStack {
-                                Text("終了")
-                                    .font(.subheadline)
-                                DatePicker("", selection: $periods[selectedIndex].end, displayedComponents: .hourAndMinute)
-                                    .labelsHidden()
-                                    .datePickerStyle(.compact)
-                            }
+                    Form {
+                        Section(header: Text("\(selectedIndex + 1)限の時間を編集")) {
+                            DatePicker("開始", selection: $periods[selectedIndex].start, displayedComponents: .hourAndMinute)
+                                .datePickerStyle(.inline)
+                            DatePicker("終了", selection: $periods[selectedIndex].end, displayedComponents: .hourAndMinute)
+                                .datePickerStyle(.inline)
                         }
-                        .padding()
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .cornerRadius(12)
-                        .padding()
                     }
-                    .animation(.easeInOut, value: selectedPeriodIndex)
+                    .frame(maxHeight: 300)
                 }
             }
             .navigationTitle("時間設定")
@@ -357,21 +340,8 @@ struct TodayView: View {
                         ForEach(todayLessons.indices, id: \.self) { i in
                             if let lesson = todayLessons[i] {
                                 let period = i
-                                let now = Date()
-                                let backgroundColor: Color = {
-                                    if period < periods.count {
-                                        let start = periods[period].start
-                                        let end = periods[period].end
-                                        if now >= end {
-                                            return Color.gray.opacity(0.2) // 過去
-                                        } else if now >= start && now < end {
-                                            return Color.blue.opacity(0.2) // 今の授業
-                                        }
-                                    }
-                                    return Color.clear // 未来または不正なインデックス
-                                }()
                                 HStack {
-                                    VStack(alignment: .leading) {
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text("\(period + 1)限: \(lesson.subject)")
                                         if !lesson.teacher.isEmpty {
                                             Text(lesson.teacher)
@@ -389,10 +359,9 @@ struct TodayView: View {
                                     }
                                     .buttonStyle(BorderlessButtonStyle())
                                 }
-                                .padding(.vertical, 8)
+                                .padding(.vertical, 4)
                                 .padding(.horizontal)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(backgroundColor))
                             }
                         }
                     }
