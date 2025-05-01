@@ -284,6 +284,14 @@ struct SettingsView: View {
                     periods = decoded
                 }
             }
+            // Transparent overlay to dismiss pickers when tapping outside
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedPeriodIndex = nil
+                    }
+            )
         }
     }
     
@@ -295,27 +303,102 @@ struct SettingsView: View {
 }
 
 struct TodayView: View {
-    // 仮のデータ（あとで本物のデータに入れ替える想定）
-    let todaySchedule = [
-        "1限: 数学",
-        "2限: 英語",
-        "3限: 物理"
-    ]
-    
+    @AppStorage("timetable") private var timetableData: Data = Data()
+    @AppStorage("periods") private var periodsData: Data = Data()
+
+    private var timetable: [[Lesson?]] {
+        (try? JSONDecoder().decode([[Lesson?]].self, from: timetableData)) ?? []
+    }
+
+    private var periods: [PeriodTime] {
+        (try? JSONDecoder().decode([PeriodTime].self, from: periodsData)) ?? []
+    }
+
+    // Helper to get today's column index (0=月, ..., 5=土), or nil for Sunday
+    private var todayColumn: Int? {
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: Date()) // 1=Sun, 2=Mon...
+        if weekday == 1 { return nil }
+        let column = weekday - 2
+        return (column >= 0 && column < 6) ? column : nil
+    }
+
+    // Used for displaying today's lessons as [Lesson?]
+    private var todayLessons: [Lesson?] {
+        guard let column = todayColumn else { return [] }
+        return timetable.map { row in
+            if row.indices.contains(column) {
+                return row[column]
+            } else {
+                return nil
+            }
+        }
+    }
+
     let upcomingTasks = [
         ("国語のレポート", "4/28提出"),
         ("化学の宿題", "4/29提出")
     ]
-    
+
+    // State for showing lesson detail
+    @State private var selectedLessonIndex: Int? = nil
+    @State private var isShowingDetail: Bool = false
+
     var body: some View {
         NavigationView {
             List {
                 Section(header: Text("今日の時間割")) {
-                    ForEach(todaySchedule, id: \.self) { subject in
-                        Text(subject)
+                    if todayColumn == nil {
+                        Text("今日は日曜日です")
+                            .padding(.vertical, 8)
+                    } else if todayLessons.allSatisfy({ $0 == nil }) {
+                        Text("今日は授業はありません")
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(todayLessons.indices, id: \.self) { i in
+                            if let lesson = todayLessons[i] {
+                                let period = i
+                                let now = Date()
+                                let backgroundColor: Color = {
+                                    if period < periods.count {
+                                        let start = periods[period].start
+                                        let end = periods[period].end
+                                        if now >= end {
+                                            return Color.gray.opacity(0.2) // 過去
+                                        } else if now >= start && now < end {
+                                            return Color.blue.opacity(0.2) // 今の授業
+                                        }
+                                    }
+                                    return Color.clear // 未来または不正なインデックス
+                                }()
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text("\(period + 1)限: \(lesson.subject)")
+                                        if !lesson.teacher.isEmpty {
+                                            Text(lesson.teacher)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                    Spacer()
+                                    Button(action: {
+                                        selectedLessonIndex = i
+                                        isShowingDetail = true
+                                    }) {
+                                        Image(systemName: "info.circle")
+                                            .foregroundColor(.blue)
+                                    }
+                                    .buttonStyle(BorderlessButtonStyle())
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(backgroundColor))
+                            }
+                        }
                     }
                 }
-                
+
                 Section(header: Text("提出期限が近い課題")) {
                     ForEach(upcomingTasks, id: \.0) { task in
                         VStack(alignment: .leading) {
@@ -328,6 +411,79 @@ struct TodayView: View {
                 }
             }
             .navigationTitle("今日")
+            .sheet(isPresented: $isShowingDetail) {
+                if let idx = selectedLessonIndex,
+                   let lesson = todayLessons.indices.contains(idx) ? todayLessons[idx] : nil,
+                   let column = todayColumn {
+                    LessonDetailSheet(lesson: lesson, period: idx, periods: periods, dayColumn: column, timetable: timetable)
+                }
+            }
+        }
+    }
+}
+
+struct LessonDetailSheet: View {
+    let lesson: Lesson
+    let period: Int
+    let periods: [PeriodTime]
+    let dayColumn: Int
+    let timetable: [[Lesson?]]
+
+    private var otherDays: [String] {
+        // Find which other days this subject appears in timetable (excluding today)
+        var daysFound: [String] = []
+        for col in 0..<days.count {
+            if col == dayColumn { continue }
+            for row in 0..<timetable.count {
+                if let l = timetable[row][col], l.subject == lesson.subject {
+                    if !daysFound.contains(days[col]) {
+                        daysFound.append(days[col])
+                    }
+                }
+            }
+        }
+        return daysFound
+    }
+
+    private var timeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "H:mm"
+        return formatter
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("科目名")) {
+                    Text(lesson.subject)
+                }
+                if !lesson.teacher.isEmpty {
+                    Section(header: Text("先生名")) {
+                        Text(lesson.teacher)
+                    }
+                }
+                if period < periods.count {
+                    Section(header: Text("時間")) {
+                        Text("\(timeFormatter.string(from: periods[period].start))〜\(timeFormatter.string(from: periods[period].end))")
+                    }
+                }
+                Section(header: Text("他の曜日")) {
+                    if otherDays.isEmpty {
+                        Text("他の曜日にはありません")
+                    } else {
+                        Text(otherDays.joined(separator: "・"))
+                    }
+                }
+            }
+            .navigationTitle("授業詳細")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") {
+                        // Dismiss handled by .sheet in parent view
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
+            }
         }
     }
 }
