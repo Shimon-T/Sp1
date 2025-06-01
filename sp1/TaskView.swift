@@ -18,7 +18,6 @@ struct TaskView: View {
     @State private var newTaskSubmissionMethod = ""
     @State private var isPresentingAddSheet = false
     @State private var selectedAssignment: Assignment? = nil
-    @State private var isPresentingDetail = false
     @State private var assignmentToDelete: Assignment? = nil
     @State private var isShowingDeleteAlert = false
 
@@ -39,9 +38,10 @@ struct TaskView: View {
                                     Text(assignment.subject)
                                         .font(.subheadline)
                                         .foregroundColor(.gray)
+                                    let isOverdue = assignment.deadline < Date()
                                     Text("締切: \(formattedDate(assignment.deadline))")
                                         .font(.caption)
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(isOverdue ? .red : .gray)
                                 }
                                 Spacer()
                                 if assignment.isStarred {
@@ -50,7 +50,6 @@ struct TaskView: View {
                                 }
                                 Button(action: {
                                     selectedAssignment = assignment
-                                    isPresentingDetail = true
                                 }) {
                                     Image(systemName: "info.circle")
                                         .foregroundColor(.blue)
@@ -59,8 +58,10 @@ struct TaskView: View {
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
-                                    assignmentToDelete = assignment
-                                    isShowingDeleteAlert = true
+                                    if let index = assignments.firstIndex(of: assignment) {
+                                        assignments.remove(at: index)
+                                        save()
+                                    }
                                 } label: {
                                     Label("削除", systemImage: "trash")
                                 }
@@ -126,17 +127,24 @@ struct TaskView: View {
                     }
                 }
             }
-            .sheet(isPresented: $isPresentingDetail) {
-                detailSheetView()
-            }
-            .alert("本当に削除しますか？", isPresented: $isShowingDeleteAlert, presenting: assignmentToDelete) { assignment in
-                Button("削除", role: .destructive) {
-                    if let index = assignments.firstIndex(of: assignment) {
-                        assignments.remove(at: index)
-                        save()
+            .sheet(item: $selectedAssignment) { assignment in
+                TaskDetailSheet(
+                    assignment: assignment,
+                    onSave: { updatedAssignment in
+                        if let index = assignments.firstIndex(of: assignment) {
+                            assignments[index] = updatedAssignment
+                            save()
+                        }
+                        selectedAssignment = nil
+                    },
+                    onDelete: {
+                        if let index = assignments.firstIndex(of: assignment) {
+                            assignments.remove(at: index)
+                            save()
+                        }
+                        selectedAssignment = nil
                     }
-                }
-                Button("キャンセル", role: .cancel) { }
+                )
             }
         }
     }
@@ -183,29 +191,6 @@ struct TaskView: View {
                     center.add(request)
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func detailSheetView() -> some View {
-        if let assignment = selectedAssignment {
-            TaskDetailSheet(
-                assignment: assignment,
-                onSave: { updatedAssignment in
-                    if let index = assignments.firstIndex(of: assignment) {
-                        assignments[index] = updatedAssignment
-                        save()
-                    }
-                    isPresentingDetail = false
-                },
-                onDelete: {
-                    if let index = assignments.firstIndex(of: assignment) {
-                        assignments.remove(at: index)
-                        save()
-                    }
-                    isPresentingDetail = false
-                }
-            )
         }
     }
 }

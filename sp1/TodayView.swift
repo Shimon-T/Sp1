@@ -16,7 +16,6 @@ struct TodayView: View {
     @AppStorage("weeklyTests") private var weeklyTestsData: Data = Data()
     
     @State private var selectedAssignment: Assignment? = nil
-    @State private var isPresentingDetail = false
     
     private var timetable: [[SubjectEntry?]] {
         (try? JSONDecoder().decode([[SubjectEntry?]].self, from: timetableData)) ?? Array(repeating: Array(repeating: nil, count: days.count), count: 6)
@@ -30,7 +29,12 @@ struct TodayView: View {
         let weekday = Calendar.current.component(.weekday, from: Date())
         guard weekday >= 2 && weekday <= 7 else { return [] }
         let column = weekday - 2
-        return timetable.compactMap { $0[column] }
+        let now = Date()
+        return timetable.enumerated().compactMap { (index, row) in
+            guard let subject = row[column], index < periods.count else { return nil }
+            let period = periods[index]
+            return period.end > now ? subject : nil
+        }
     }
     
     private var importantTasks: [Assignment] {
@@ -46,10 +50,13 @@ struct TodayView: View {
     
     private var weeklyTests: [WeeklyTest] {
         let tests = (try? JSONDecoder().decode([WeeklyTest].self, from: weeklyTestsData)) ?? []
-        let todayWeekday = Calendar.current.component(.weekday, from: Date()) // 1: Sunday, 2: Monday, ...
-        let japaneseWeekdays = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"]
-        let todayName = japaneseWeekdays[todayWeekday - 1]
-        return tests.filter { japaneseWeekdays.firstIndex(of: $0.weekday) ?? 7 >= todayWeekday }
+        let today = Date()
+        return tests.compactMap { test in
+            guard let nextSession = test.sessions.first(where: { $0.date >= today }) else { return nil }
+            var nextTest = test
+            nextTest.sessions = [nextSession]
+            return nextTest
+        }
     }
 
     private func formattedDate(_ date: Date) -> String {
@@ -105,7 +112,6 @@ struct TodayView: View {
                                 Spacer()
                                 Button(action: {
                                     selectedAssignment = task
-                                    isPresentingDetail = true
                                 }) {
                                     Image(systemName: "info.circle")
                                         .foregroundColor(.blue)
@@ -117,34 +123,40 @@ struct TodayView: View {
                 }
                 Section(header: Text("小テスト")) {
                     if weeklyTests.isEmpty {
-                        Text("今週の小テストはありません")
+                        Text("小テストはありません")
                             .foregroundColor(.gray)
                             .italic()
                     } else {
                         ForEach(weeklyTests) { test in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("\(test.weekday) - \(test.name)")
+                                Text(test.name)
                                     .font(.headline)
                                 ForEach(test.sessions) { session in
-                                    Text("第\(session.sessionNumber)回: \(session.pageRange)")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("第\(session.sessionNumber)回")
+                                            .font(.subheadline)
+                                        Text("日付: \(formattedDate(session.date))")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                        Text("範囲: \(session.pageRange)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.leading, 8)
                                 }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("今日")
+            .navigationTitle("ホーム")
             .background(Color(UIColor.systemGroupedBackground))
-            .sheet(isPresented: $isPresentingDetail) {
-                if let assignment = selectedAssignment {
-                    TaskDetailSheet(
-                        assignment: assignment,
-                        onSave: { _ in isPresentingDetail = false },
-                        onDelete: { isPresentingDetail = false }
-                    )
-                }
+            .sheet(item: $selectedAssignment) { assignment in
+                TaskDetailSheet(
+                    assignment: assignment,
+                    onSave: { _ in selectedAssignment = nil },
+                    onDelete: { selectedAssignment = nil }
+                )
             }
         }
     }

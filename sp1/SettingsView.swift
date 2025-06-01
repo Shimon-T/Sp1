@@ -13,8 +13,16 @@ struct SettingsView: View {
         ]
         return try! JSONEncoder().encode(defaultPeriods)
     }()
-
+    
     @State private var periods: [ClassPeriod] = []
+    @State private var weekdayLimits: [String: Int] = [
+        "月曜日": 6,
+        "火曜日": 6,
+        "水曜日": 6,
+        "木曜日": 6,
+        "金曜日": 6,
+        "土曜日": 4
+    ]
 
     var body: some View {
         NavigationView {
@@ -39,12 +47,29 @@ struct SettingsView: View {
                             .onChange(of: periods[index].end) { save() }
                     }
                 }
+                Section(header: Text("曜日ごとの時限数")) {
+                    ForEach(["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"], id: \.self) { day in
+                        Stepper("\(day): \(weekdayLimits[day] ?? 0)限", value: Binding(
+                            get: { weekdayLimits[day] ?? 0 },
+                            set: {
+                                weekdayLimits[day] = $0
+                                save()
+                            }
+                        ), in: 0...10)
+                    }
+                }
             }
-            .navigationTitle("時間設定")
+            .navigationTitle("設定")
             .onAppear {
                 if let decoded = try? JSONDecoder().decode([ClassPeriod].self, from: periodsData) {
                     periods = decoded
                 }
+                if let limitsData = UserDefaults.standard.data(forKey: "weekdayLimits"),
+                   let limitsDecoded = try? JSONDecoder().decode([String: Int].self, from: limitsData) {
+                    weekdayLimits = limitsDecoded
+                }
+                print("Loaded periods: \(periods.count)")
+                print("Loaded weekdayLimits: \(weekdayLimits)")
             }
         }
     }
@@ -53,5 +78,10 @@ struct SettingsView: View {
         if let encoded = try? JSONEncoder().encode(periods) {
             periodsData = encoded
         }
+        if let limitsEncoded = try? JSONEncoder().encode(weekdayLimits) {
+            UserDefaults.standard.set(limitsEncoded, forKey: "weekdayLimits")
+        }
+        print("Saved periods: \(periods.count)")
+        print("Saved weekdayLimits: \(weekdayLimits)")
     }
 }

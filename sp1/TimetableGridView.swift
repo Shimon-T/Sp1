@@ -6,10 +6,7 @@ struct TimetableGridView: View {
         (try? JSONDecoder().decode([ClassPeriod].self, from: periodsData)) ?? []
     }
     
-    @State private var timetable: [[SubjectEntry?]] = Array(
-        repeating: Array(repeating: nil, count: days.count),
-        count: 6
-    )
+    @State private var storedTimetable: [[SubjectEntry?]] = []
     
     @State private var selectedRow: Int? = nil
     @State private var selectedColumn: Int? = nil
@@ -20,6 +17,37 @@ struct TimetableGridView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "H:mm"
         return formatter
+    }
+    
+    private func loadTimetableLimits() -> [Int] {
+        let defaultLimits: [String: Int] = [
+            "月曜日": 6, "火曜日": 6, "水曜日": 6, "木曜日": 6, "金曜日": 6, "土曜日": 4
+        ]
+        
+        let weekdays = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"]
+
+        if let data = UserDefaults.standard.data(forKey: "weekdayLimits"),
+           let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
+            print("✅ 読み込まれた weekdayLimits: \(decoded)")
+            return weekdays.map { decoded[$0] ?? 0 }
+        }
+
+        print("⚠️ weekdayLimits 未保存。デフォルトを使用")
+        return weekdays.map { defaultLimits[$0] ?? 0 }
+    }
+    
+    private var limits: [Int] {
+        loadTimetableLimits()
+    }
+
+    private var timetable: [[SubjectEntry?]] {
+        var result: [[SubjectEntry?]] = Array(repeating: Array(repeating: nil, count: days.count), count: limits.max() ?? 6)
+        for row in 0..<min(storedTimetable.count, result.count) {
+            for col in 0..<min(storedTimetable[row].count, days.count) {
+                result[row][col] = storedTimetable[row][col]
+            }
+        }
+        return result
     }
     
     var body: some View {
@@ -36,7 +64,7 @@ struct TimetableGridView: View {
                     }
                 }
                 
-                ForEach(0..<periods.count, id: \.self) { row in
+                ForEach(0..<timetable.count, id: \.self) { row in
                     HStack(spacing: 0) {
                         Text("\(row+1)限")
                             .frame(width: 50)
@@ -45,33 +73,41 @@ struct TimetableGridView: View {
                             .padding(3)
                         
                         ForEach(0..<days.count, id: \.self) { column in
-                            Button(action: {
-                                selectedRow = row
-                                selectedColumn = column
-                                if let lesson = timetable[row][column] {
-                                    subjectInput = lesson.subject
-                                    teacherInput = lesson.teacher
-                                } else {
-                                    subjectInput = ""
-                                    teacherInput = ""
-                                }
-                            }) {
-                                VStack {
+                            let maxRowForColumn = limits[column]
+
+                            if row < maxRowForColumn {
+                                Button(action: {
+                                    selectedRow = row
+                                    selectedColumn = column
                                     if let lesson = timetable[row][column] {
-                                        Text(lesson.subject)
-                                            .font(.body)
-                                        Text(lesson.teacher)
-                                            .font(.caption2)
-                                            .foregroundColor(.gray)
+                                        subjectInput = lesson.subject
+                                        teacherInput = lesson.teacher
                                     } else {
-                                        Text("＋")
-                                            .font(.title3)
-                                            .foregroundColor(.gray)
+                                        subjectInput = ""
+                                        teacherInput = ""
                                     }
+                                }) {
+                                    VStack {
+                                        if let lesson = timetable[row][column] {
+                                            Text(lesson.subject)
+                                                .font(.body)
+                                            Text(lesson.teacher)
+                                                .font(.caption2)
+                                                .foregroundColor(.gray)
+                                        } else {
+                                            Text("＋")
+                                                .font(.title3)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 50)
+                                    .background(Color(UIColor.secondarySystemBackground))
+                                    .border(Color.gray.opacity(0.4))
                                 }
-                                .frame(maxWidth: .infinity, minHeight: 50)
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .border(Color.gray.opacity(0.4))
+                            } else {
+                                Spacer()
+                                    .frame(maxWidth: .infinity, minHeight: 50)
+                                    .background(Color.clear)
                             }
                         }
                     }
@@ -81,8 +117,12 @@ struct TimetableGridView: View {
             .padding(.top, 20)
             .padding(.trailing, 5)
             .navigationTitle("時間割")
-            .onAppear {
-                loadTimetable()
+            .task {
+                if let data = UserDefaults.standard.data(forKey: "timetable"),
+                   let decoded = try? JSONDecoder().decode([[SubjectEntry?]].self, from: data) {
+                    storedTimetable = decoded
+                }
+
                 if periodsData.isEmpty {
                     let calendar = Calendar.current
                     let defaultPeriods = [
@@ -116,7 +156,19 @@ struct TimetableGridView: View {
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("保存") {
-                                    timetable[row][column] = SubjectEntry(subject: subjectInput, teacher: teacherInput)
+                                    var newTimetable = storedTimetable
+                                    // Ensure newTimetable has enough rows
+                                    while newTimetable.count <= row {
+                                        newTimetable.append(Array(repeating: nil, count: days.count))
+                                    }
+                                    // Ensure each row has enough columns
+                                    for i in 0..<newTimetable.count {
+                                        while newTimetable[i].count < days.count {
+                                            newTimetable[i].append(nil)
+                                        }
+                                    }
+                                    newTimetable[row][column] = SubjectEntry(subject: subjectInput, teacher: teacherInput)
+                                    storedTimetable = newTimetable
                                     saveTimetable()
                                     selectedRow = nil
                                     selectedColumn = nil
@@ -136,7 +188,7 @@ struct TimetableGridView: View {
     }
     
     private func saveTimetable() {
-        if let encoded = try? JSONEncoder().encode(timetable) {
+        if let encoded = try? JSONEncoder().encode(storedTimetable) {
             UserDefaults.standard.set(encoded, forKey: "timetable")
         }
     }
@@ -144,7 +196,7 @@ struct TimetableGridView: View {
     private func loadTimetable() {
         if let data = UserDefaults.standard.data(forKey: "timetable"),
            let decoded = try? JSONDecoder().decode([[SubjectEntry?]].self, from: data) {
-            timetable = decoded
+            storedTimetable = decoded
         }
     }
 }
